@@ -1,5 +1,5 @@
 import model from './models/relative-pattern.json';
-import {detection, expeditionVersion, testFrequencies, type Trial} from './screening';
+import {detection, isExpedition, testFrequencies, type Trial} from './screening';
 
 export type PatternAnalysis = {
   modelVersion: string;
@@ -11,8 +11,8 @@ export type PatternAnalysis = {
 };
 
 export function patternPrediction(values: number[]) {
-  if (values.length !== 6 || values.some(value => !Number.isFinite(value) || value < 15 || value > 90)) {
-    throw new Error('Six finite detection levels between 15 and 90 are required');
+  if (values.length !== 6 || values.some(value => !Number.isFinite(value) || value < 15 || value > 95)) {
+    throw new Error('Six finite detection levels between 15 and 95 are required');
   }
   const average = values.reduce((sum, value) => sum + value, 0) / values.length;
   // Match sklearn's float32 input conversion.
@@ -44,14 +44,14 @@ export function analyzePattern(report: {protocol?: string; status?: string; tria
     status: 'unavailable',
     ears: [],
   };
-  if (report.protocol !== expeditionVersion || report.status !== 'complete') {
+  if (!isExpedition(report.protocol) || report.status !== 'complete') {
     return {...result, reason:'Complete an ECHO Expedition session to analyse both curves.'};
   }
   const valid = report.trials.filter(trial => !trial.interrupted);
   if (valid.some(trial => trial.kind === 'silent' && trial.heard)) {
     return {...result, status:'review', reason:'Responses were recorded during silence. Repeat the session before interpreting the curves.'};
   }
-  const points = [0, 1].map(ear => testFrequencies.map(freq => detection(report.trials, ear, freq)));
+  const points = [0, 1].map(ear => testFrequencies.map(freq => detection(report.trials, ear, freq, report.protocol)));
   if (points.some(ear => ear.some(point => point.status !== 'detected'))) {
     return {...result, reason:'Some detection levels reached the test limits or remain incomplete. The model needs six uncensored points for each channel.'};
   }
@@ -64,4 +64,21 @@ export function analyzePattern(report: {protocol?: string; status?: string; tria
     return {ear:index === 0 ? 'left' as const : 'right' as const, label:prediction.label, code:prediction.code};
   });
   return {...result, status:'available', ears};
+}
+
+export function summarizePlayback(report:{protocol?:string;status?:string;trials:Trial[]}) {
+  if (report.status !== 'complete') return null;
+  const valid = report.trials.filter(trial => !trial.interrupted);
+  const silent = valid.filter(trial => trial.kind === 'silent');
+  if (silent.filter(trial => trial.heard).length > Math.max(1, silent.length * .15)) return null;
+  return [0,1].map(ear => {
+    const points = testFrequencies.map(freq => detection(valid, ear, freq, report.protocol));
+    const detected = points.flatMap(point => point.level === null ? [] : [point.level]);
+    const median = [...detected].sort((a,b)=>a-b);
+    const middle = Math.floor(median.length / 2);
+    const typical = median.length ? (median[middle] + median[Math.floor((median.length-1)/2)]) / 2 : null;
+    return {ear:ear === 0 ? 'Left ear' : 'Right ear', count:detected.length, typical,
+      label: detected.length < points.length ? 'Limited detection across frequencies' :
+        typical! <= 40 ? 'Lower playback steps' : typical! <= 65 ? 'Mid-range playback steps' : 'Higher playback steps'};
+  });
 }

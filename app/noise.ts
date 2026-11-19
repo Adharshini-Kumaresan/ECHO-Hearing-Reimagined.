@@ -37,3 +37,8 @@ export class RoomMonitor {
     this.stream.getTracks().forEach(track => track.stop());
   }
 }
+
+export function roomTooLoud(level:number, baseline?:number) {
+  // These are microphone-relative readings and vary by device gain.
+  return level > -35 || (baseline !== undefined && level > Math.max(-65,baseline+12));
+}

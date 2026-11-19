@@ -2,7 +2,7 @@ import {useEffect, useRef, type PointerEvent} from 'react';
 import {detection, testFrequencies, type Trial} from './screening';
 
 export type Lane = 0 | 1;
-export type Shot = { id: number; lane: Lane };
+export type Shot = { id: number; lane: Lane; hit: boolean };
 
 export function Arena({shot, lane, steer, paused}:{
   shot:Shot|null; lane:Lane; steer:(lane:Lane)=>void; paused:boolean;
@@ -11,7 +11,7 @@ export function Arena({shot, lane, steer, paused}:{
   const laser=useRef<HTMLDivElement>(null);
 
   useEffect(()=>{
-    if (!shot || paused || !arena.current || !laser.current) return;
+    if (!shot?.hit || paused || !arena.current || !laser.current) return;
     const projectile=laser.current;
     const enemies=arena.current.querySelectorAll<HTMLElement>(`.lane-${shot.lane} .arena-enemy`);
     const start=performance.now();
@@ -19,7 +19,13 @@ export function Arena({shot, lane, steer, paused}:{
     let previousTop=projectile.getBoundingClientRect().bottom;
 
     function checkHit(now:number){
-      if (now-start>480){projectile.style.visibility="hidden";return;}
+      if (now-start>420){
+        const target=Array.from(enemies).filter(enemy=>!enemy.dataset.hit)
+          .sort((first,second)=>second.getBoundingClientRect().bottom-first.getBoundingClientRect().bottom)[0];
+        if(target)target.dataset.hit='true';
+        projectile.style.visibility="hidden";
+        return;
+      }
       const beam=projectile.getBoundingClientRect();
       for (const enemy of enemies){
         if (enemy.dataset.hit) continue;
@@ -55,14 +61,14 @@ export function Arena({shot, lane, steer, paused}:{
   </div>;
 }
 
-export function DetectionChart({trials}:{trials:Trial[]}) {
+export function DetectionChart({trials,protocol}:{trials:Trial[];protocol?:string}) {
   const xs = (i:number)=>85+i*100;
-  const ys = (level:number)=>30+(level-15)*3.4;
-  const ears = [0,1].map(ear=>testFrequencies.map(freq=>detection(trials,ear,freq)));
+  const ys = (level:number)=>30+(level-15)*3.18;
+  const ears = [0,1].map(ear=>testFrequencies.map(freq=>detection(trials,ear,freq,protocol)));
   return <>
     <svg className="audiogram" viewBox="0 0 650 337" role="img" aria-label="Detection levels by frequency. Exact values are listed below.">
       <rect x="70" y="30" width="530" height="255" rx="3" fill="#f5f1fb"/>
-      {[15,30,45,60,75,90].map(level=><g key={level}><line x1="70" x2="600" y1={ys(level)} y2={ys(level)} stroke="#ddd4ea"/><text x="59" y={ys(level)+4} textAnchor="end" fontSize="13">{level}</text></g>)}
+      {[15,30,45,60,75,95].map(level=><g key={level}><line x1="70" x2="600" y1={ys(level)} y2={ys(level)} stroke="#ddd4ea"/><text x="59" y={ys(level)+4} textAnchor="end" fontSize="13">{level}</text></g>)}
       {testFrequencies.map((freq,i)=><g key={freq}><line x1={xs(i)} x2={xs(i)} y1="30" y2="285" stroke="#e2daed"/><text x={xs(i)} y="307" textAnchor="middle" fontSize="13">{freq}</text></g>)}
       {ears.map((points,ear)=><g key={ear} stroke={ear===0?'#5a54b0':'#b13c38'} strokeWidth="2.5">
         {points.map((point,i)=>{
@@ -80,10 +86,10 @@ export function DetectionChart({trials}:{trials:Trial[]}) {
       <thead><tr><th scope="col">Frequency</th><th scope="col">× Left channel</th><th scope="col">○ Right channel</th></tr></thead>
       <tbody>{testFrequencies.map((freq,i)=><tr key={freq}><th scope="row">{freq.toLocaleString()} Hz</th>{ears.map((points,ear)=>{
         const point=points[i];
-        const label=point.status==='pending'?'Incomplete':point.status==='above-range'?'No response at max':point.status==='at-floor'?'≤ 15':point.level;
+        const label=point.status==='pending'?'Incomplete':point.status==='above-range'?'No reliable level':point.status==='at-floor'?'≤ 15':point.level;
         return <td key={ear}>{label}</td>;
       })}</tr>)}</tbody>
     </table>
-    <p className="muted">Levels are relative to this session’s playback setup. The detection estimate uses repeated responses. The report shows the channel that played each tone.</p>
+    <p className="muted">Levels are relative to this session’s playback setup. The estimate uses on-time shots on the correct side and repeats missed steps. The report shows the channel that played each tone.</p>
   </>;
 }

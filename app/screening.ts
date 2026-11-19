@@ -59,9 +59,12 @@ export function summarize(trials: Trial[]) {
   };
 }
 
-export const expeditionVersion = 'echo-expedition-v2';
+export const legacyExpeditionVersion = 'echo-expedition-v2';
+export const sweepExpeditionVersion = 'echo-expedition-v3';
+export const expeditionVersion = 'echo-expedition-v4';
+export const isExpedition = (protocol?:string) => protocol === expeditionVersion || protocol === sweepExpeditionVersion || protocol === legacyExpeditionVersion;
 export const testFrequencies = [250, 500, 1000, 2000, 4000, 8000] as const;
-export const relativeSteps = Array.from({length:16}, (_, i) => 15 + i * 5);
+export const relativeSteps = Array.from({length:17}, (_, i) => 15 + i * 5);
 
 function shuffled<T>(items: T[]): T[] {
   for (let i = items.length - 1; i > 0; i--) {
@@ -72,12 +75,50 @@ function shuffled<T>(items: T[]): T[] {
 }
 
 export function expeditionOrder() {
-  return shuffled(([0,1] as const).flatMap(ear => testFrequencies.map(freq => ({ear,freq}))));
+  return testFrequencies.flatMap(freq => [...relativeSteps].reverse().flatMap(level =>
+    shuffled(([0,1] as const).map(ear => ({ear, freq, level, kind:'tone' as const})))));
 }
 
-export function detection(trials: Trial[], ear: number, freq: number) {
+export function stepResult(attempts: Trial[]) {
+  if (attempts.length === 1 && attempts[0].heard) return true;
+  if (attempts.length < 3) return null;
+  return attempts.filter(attempt => attempt.heard).length >= 2;
+}
+
+export function detection(trials: Trial[], ear: number, freq: number, protocol?:string) {
+  if (protocol === legacyExpeditionVersion) return legacyDetection(trials, ear, freq);
+  if (protocol !== sweepExpeditionVersion) return adaptiveDetection(trials, ear, freq);
+  const results = relativeSteps.map(level => stepResult(trials.filter(t =>
+    t.kind === 'tone' && !t.interrupted && t.ear === ear && t.freq === freq && t.level === level)));
+  if (results.includes(null)) return {status:'pending' as const, level:null};
+  // Require a neighboring louder step to corroborate a response below the maximum.
+  const lowest = results.findIndex((pass, index) =>
+    pass && (index === results.length - 1 || results[index + 1]));
+  if (lowest === -1) return {status:'above-range' as const, level:null};
+  return {status:lowest === 0 ? 'at-floor' as const : 'detected' as const, level:relativeSteps[lowest]};
+}
+
+function adaptiveDetection(trials: Trial[], ear: number, freq: number) {
+  let misses = 0;
+  let lastHeard: number | null = null;
+  const matching = trials.filter(t => t.kind === 'tone' && !t.interrupted && t.ear === ear && t.freq === freq);
+  for (const level of [...relativeSteps].reverse()) {
+    const pass = stepResult(matching.filter(t => t.level === level));
+    if (pass === null) return {status:'pending' as const, level:null};
+    if (pass) {
+      misses = 0;
+      lastHeard = level;
+    } else if (++misses === 3) {
+      break;
+    }
+  }
+  if (lastHeard === null) return {status:'above-range' as const, level:null};
+  return {status:lastHeard === 15 ? 'at-floor' as const : 'detected' as const, level:lastHeard};
+}
+
+function legacyDetection(trials: Trial[], ear: number, freq: number) {
   let low = -1;
-  let high = relativeSteps.length;
+  let high = relativeSteps.length - 1;
   let index = 7;
   while (high - low > 1) {
     const level = relativeSteps[index];
@@ -89,11 +130,11 @@ export function detection(trials: Trial[], ear: number, freq: number) {
     else low = index;
     index = Math.floor((low + high) / 2);
   }
-  if (high === relativeSteps.length) return {status:'above-range' as const, level:null};
+  if (high === relativeSteps.length - 1) return {status:'above-range' as const, level:null};
   return {status:high === 0 ? 'at-floor' as const : 'detected' as const, level:relativeSteps[high]};
 }
 
 // Relative digital steps are intentionally bounded independently of the display scale.
 export function playbackGain(index: number) {
-  return .04 * 10 ** ((Math.max(15, Math.min(90, index)) - 90) / 30);
+  return .04 * 10 ** ((Math.max(15, Math.min(95, index)) - 95) / 30);
 }

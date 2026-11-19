@@ -1,6 +1,6 @@
 'use client';
 import {useState} from 'react';
-import {createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, sendEmailVerification} from 'firebase/auth';
+import {createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, sendEmailVerification, type User} from 'firebase/auth';
 import {ArrowRight, Headphones, ShieldCheck} from 'lucide-react';
 import {echoAuth} from './firebase-client';
 
@@ -12,8 +12,8 @@ function authError(error:unknown) {
   if(code==='auth/email-already-in-use')return 'Unable to create this account. Try signing in or resetting your password.';
   return 'Unable to continue. Check your email and password, then try again.';
 }
-export function AuthPanel({onDone}:{onDone:()=>void}) {
-  const [mode,setMode]=useState<'login'|'signup'|'reset'>('login');
+export function AuthPanel({onDone,forTest}:{onDone:(user:User)=>void;forTest:boolean}) {
+  const [mode,setMode]=useState<'login'|'signup'|'reset'>(forTest?'signup':'login');
   const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[name,setName]=useState('');
   const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');
   function change(next:typeof mode){setMode(next);setPassword('');setError('');setMessage('');}
@@ -26,18 +26,19 @@ export function AuthPanel({onDone}:{onDone:()=>void}) {
         setMessage('If an account exists for that email, a reset link will arrive shortly. Check your spam folder too.');
       }else if(mode==='signup'){
         const credential=await createUserWithEmailAndPassword(auth,email.trim(),password);
-        await updateProfile(credential.user,{displayName:name.trim()});
-        try{await sendEmailVerification(credential.user);}catch{/* Account is created; verification can be resent from the dashboard. */}
-        setPassword('');onDone();
+        try{await updateProfile(credential.user,{displayName:name.trim()});}catch{/* The test asks for a display name. */}
+        try{await sendEmailVerification(credential.user);}catch{/* Verification can be resent from the dashboard. */}
+        setPassword('');onDone(credential.user);
       }else{
-        await signInWithEmailAndPassword(auth,email.trim(),password);setPassword('');onDone();
+        const credential=await signInWithEmailAndPassword(auth,email.trim(),password);
+        setPassword('');onDone(credential.user);
       }
     }catch(error){setError(authError(error));}finally{setBusy(false);}
   }
   return <section className="flow-card auth-card"><div className="auth-symbol"><Headphones size={30}/></div>
     <div className="eyebrow">YOUR PRIVATE SOUND SPACE</div>
     <h2>{mode==='signup'?<>Make it <em>yours.</em></>:mode==='reset'?<>A fresh <em>start.</em></>:<>Welcome <em>back.</em></>}</h2>
-    <p>{mode==='reset'?'We’ll send a link to reset your password.':'Keep your sound journeys together, wherever you return.'}</p>
+    <p>{mode==='reset'?'We’ll send a link to reset your password.':forTest?'Create an account or log in to take the hearing check.':'Keep your sound journeys together, wherever you return.'}</p>
     {mode!=='reset'&&<div className="auth-tabs" aria-label="Account options"><button type="button" aria-pressed={mode==='login'} disabled={busy} onClick={()=>change('login')}>Log in</button><button type="button" aria-pressed={mode==='signup'} disabled={busy} onClick={()=>change('signup')}>Create account</button></div>}
     <form onSubmit={submit}>
       {mode==='signup'&&<label>Your name<input autoComplete="name" required maxLength={60} value={name} onChange={e=>setName(e.target.value)} disabled={busy}/></label>}

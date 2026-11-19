@@ -1,7 +1,7 @@
 import {analyzePattern} from '../../pattern-analysis';
 import { z } from 'zod';
 import {firebaseIdentity, firestoreReportsUrl, firestoreFetch, firebaseError} from '../../firebase-server';
-import { detection, expeditionVersion, testFrequencies, relativeSteps, frequencies, levels, protocolVersion, responseWindowMs } from '../../screening';
+import { detection, expeditionVersion, legacyExpeditionVersion, sweepExpeditionVersion, isExpedition, stepResult, testFrequencies, relativeSteps, frequencies, levels, protocolVersion, responseWindowMs } from '../../screening';
 
 const pilotTrial = z.object({
   ear: z.union([z.literal(0), z.literal(1)]),
@@ -19,20 +19,30 @@ const pilotReport = z.object({
   name: z.string().min(1).max(60),
   age: z.number().int().min(18).max(120).optional(),
   answers: z.array(z.string().max(200)).max(3),
-  protocol: z.enum([protocolVersion, expeditionVersion]),
+  protocol: z.enum([protocolVersion, legacyExpeditionVersion, sweepExpeditionVersion, expeditionVersion]),
   noiseMonitored: z.boolean().optional(),
   status: z.enum(['complete', 'incomplete']),
-  trials: z.array(pilotTrial).max(512),
+  trials: z.array(pilotTrial).max(1000),
 }).refine(report => {
-  if (report.protocol === expeditionVersion) {
+  if (isExpedition(report.protocol)) {
+    const attempts = new Map<string, z.infer<typeof pilotTrial>[]>();
     for (const trial of report.trials) {
       if (trial.heard !== (trial.responseMs !== null)) return false;
       if (trial.kind === 'silent') {
         if (trial.freq !== 0 || trial.level !== 0) return false;
-      } else if (!testFrequencies.some(freq => freq === trial.freq) || !relativeSteps.includes(trial.level)) return false;
+      } else {
+        if (!testFrequencies.some(freq => freq === trial.freq) || !relativeSteps.includes(trial.level)) return false;
+        if (report.protocol === legacyExpeditionVersion && trial.level > 90) return false;
+        if (report.protocol !== legacyExpeditionVersion && !trial.interrupted) {
+          const key = [trial.ear, trial.freq, trial.level].join(':');
+          const previous = attempts.get(key) ?? [];
+          if (previous.length && stepResult(previous) !== null) return false;
+          attempts.set(key, [...previous, trial]);
+        }
+      }
     }
     return report.status === 'incomplete' || [0, 1].every(ear => testFrequencies.every(freq =>
-      detection(report.trials, ear, freq).status !== 'pending'));
+      detection(report.trials, ear, freq, report.protocol).status !== 'pending'));
   }
   const counts = new Map<string, number>();
   let previousEar = 0;
