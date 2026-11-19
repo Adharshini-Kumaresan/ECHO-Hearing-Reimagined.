@@ -1,0 +1,37 @@
+// Assumed data model:
+// users/{uid}/reports/{reportId}: immutable private screening reports.
+// ownerId: string, 1..128 chars, must match authenticated UID and path.
+// reportId: string, 1..100 chars, must match path (letters, digits, _ and -).
+// protocol: string enum (echo-expedition-v2 or browser-pilot-v1).
+// createdAt: timestamp, server receipt time within five minutes of write.
+// payload: JSON string, 1..200000 chars; application validates the report schema
+// and recomputes model analysis before displaying saved results.
+// No parent user profile document is required or readable.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() { return request.auth != null; }
+    function isOwner(uid) { return isAuthenticated() && request.auth.uid == uid; }
+    function uidUnchanged(uid) { return request.resource.data.ownerId == uid; }
+    function isValidReport(data, reportId) {
+      return data.keys().hasAll(['ownerId','reportId','protocol','createdAt','payload'])
+        && data.keys().hasOnly(['ownerId','reportId','protocol','createdAt','payload'])
+        && data.ownerId is string && data.ownerId.size() > 0 && data.ownerId.size() <= 128
+        && data.reportId is string && data.reportId.size() > 0 && data.reportId.size() <= 100
+        && data.reportId == reportId && data.reportId.matches('^[A-Za-z0-9_-]+$')
+        && data.protocol in ['echo-expedition-v2','browser-pilot-v1']
+        && data.createdAt is timestamp
+        && data.createdAt > request.time - duration.value(5, 'm')
+        && data.createdAt < request.time + duration.value(30, 's')
+        && data.payload is string && data.payload.size() > 0 && data.payload.size() <= 200000;
+    }
+    match /users/{uid}/reports/{reportId} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && uidUnchanged(uid) && isValidReport(request.resource.data, reportId);
+      // Completed reports cannot be altered; retrying a save returns the original.
+      allow update: if false;
+      allow delete: if isOwner(uid);
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

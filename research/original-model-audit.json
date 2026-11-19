@@ -1,0 +1,64 @@
+{
+  "models": [
+    {
+      "ear": "left",
+      "sha256": "63c9186185d268acf4f6d8f64ae6104d1a7ce1ccfcfd35077c1c1e9a890169d0",
+      "estimator": "RandomForestClassifier",
+      "trees": 100,
+      "classes": [
+        "Mild",
+        "Moderate",
+        "Normal",
+        "Profound",
+        "Severe"
+      ],
+      "features": [
+        "age",
+        "L_250",
+        "L_500",
+        "L_1000",
+        "L_2000",
+        "L_4000",
+        "L_8000",
+        "R_250",
+        "R_500",
+        "R_1000",
+        "R_2000",
+        "R_4000",
+        "R_8000"
+      ]
+    },
+    {
+      "ear": "right",
+      "sha256": "364b887d320d9d1b3e759f3bb608323837352c700a21370f18379d3ccea59e78",
+      "estimator": "RandomForestClassifier",
+      "trees": 100,
+      "classes": [
+        "Mild",
+        "Moderate",
+        "Normal",
+        "Profound",
+        "Severe"
+      ],
+      "features": [
+        "age",
+        "L_250",
+        "L_500",
+        "L_1000",
+        "L_2000",
+        "L_4000",
+        "L_8000",
+        "R_250",
+        "R_500",
+        "R_1000",
+        "R_2000",
+        "R_4000",
+        "R_8000"
+      ]
+    }
+  ],
+  "training_data": "not supplied",
+  "evaluation_data": "not supplied",
+  "units": "not established by serialized models",
+  "deployment_decision": "Not applied to uncalibrated relative browser steps. A curve geometry model is used separately."
+}

@@ -1,0 +1,5 @@
+{
+  "framework": "nextjs",
+  "installCommand": "corepack pnpm install --frozen-lockfile",
+  "buildCommand": "node scripts/build-lisa.mjs && corepack pnpm exec next build"
+}
